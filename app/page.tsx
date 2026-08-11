@@ -271,7 +271,19 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
                     <div className="expense-row">
                       <input placeholder="Tên khoản chi" value={expense.label} onChange={e => updateExpense(person.id, expense.id, { label: e.target.value })} aria-label="Tên khoản chi" />
                       <div className="amount-field"><input inputMode="numeric" value={expense.amount || ""} placeholder="0" onChange={e => updateExpense(person.id, expense.id, { amount: Number(e.target.value.replace(/\D/g, "")) })} aria-label="Số tiền" /><span>₫</span></div>
-                      <button className={`split-trigger ${expense.splitWith.length < people.length ? "partial" : ""}`} onClick={() => setOpenSplitId(openSplitId === expense.id ? null : expense.id)} aria-expanded={openSplitId === expense.id}>◎ {expense.splitWith.length === people.length ? "Cả nhóm" : `${expense.splitWith.length} người`} <span>⌄</span></button>
+                      <button
+                        className={`split-trigger ${expense.splitWith.length < people.length ? "partial" : ""}`}
+                        onClick={() => setOpenSplitId(openSplitId === expense.id ? null : expense.id)}
+                        aria-expanded={openSplitId === expense.id}
+                        aria-label={`Chia cho ${expense.splitWith.length === people.length ? "cả nhóm" : `${expense.splitWith.length} người`}`}
+                        title={`Chia cho ${expense.splitWith.length === people.length ? "cả nhóm" : `${expense.splitWith.length} người`}`}
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                          <circle cx="9" cy="7" r="4" />
+                          <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                      </button>
                       <button className="remove" onClick={() => removeExpense(person.id, expense.id)} aria-label="Xóa khoản chi">×</button>
                     </div>
                     {openSplitId === expense.id && <div className="split-panel"><div><b>Chia khoản này cho ai?</b><button onClick={() => setOpenSplitId(null)}>Xong</button></div><div className="split-options">{people.map(member => <label className={expense.splitWith.includes(member.id) ? "checked" : ""} key={member.id}><input type="checkbox" checked={expense.splitWith.includes(member.id)} onChange={() => toggleParticipant(expense.id, member.id)} /><span>✓</span>{member.name}</label>)}</div></div>}
