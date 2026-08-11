@@ -215,7 +215,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
         <span className="home-note">Miễn phí · Không cần đăng nhập</span>
       </header>
       <section className="home-hero">
-        <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
+        <div className="eyebrow">Chia tiền nhóm, không chia tình bạn</div>
         <h1>Mỗi cuộc vui,<br/><em>một phép chia nhẹ nhàng.</em></h1>
         <p>Ghi lại ai đã chi gì, chọn chính xác người tham gia từng khoản và để ChiaNhanh tính luồng chuyển tiền gọn nhất qua một người trung gian.</p>
         <div className="home-group-field">
@@ -256,7 +256,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
       </header>
 
       <section className="hero">
-        <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
+        <div className="eyebrow">Chia tiền nhóm, không chia tình bạn</div>
         <input className="trip-title" value={tripName} onChange={e => renameTrip(e.target.value)} placeholder="Tên nhóm" aria-label="Tên nhóm" />
         <p>{groupId ? "Mọi người trong nhóm có thể nhập cùng lúc — thay đổi được tự động đồng bộ." : "Thêm chi tiêu, chọn người trung gian, rồi chia sẻ link để cả nhóm cùng nhập."}</p>
         <div className="stats">
