@@ -4,7 +4,7 @@
 
 ## Yêu cầu
 
-- Node.js `>=22.13.0`
+- Node.js `>=20.9.0`
 
 ## Chạy local
 

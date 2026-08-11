@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 
 const schema = `
 PRAGMA foreign_keys = ON;
@@ -41,13 +41,13 @@ CREATE INDEX IF NOT EXISTS idx_expenses_group_person ON expenses(group_id, perso
 CREATE INDEX IF NOT EXISTS idx_expense_participants_group ON expense_participants(group_id, expense_id);
 `;
 
-type DatabaseGlobal = typeof globalThis & { chiaTienDb?: DatabaseSync };
+type DatabaseGlobal = typeof globalThis & { chiaTienDb?: Database.Database };
 const databaseGlobal = globalThis as DatabaseGlobal;
 
 export function getDb() {
   if (!databaseGlobal.chiaTienDb) {
     const databasePath = resolve(/* turbopackIgnore: true */ process.cwd(), process.env.SQLITE_DATABASE_PATH || "local.db");
-    databaseGlobal.chiaTienDb = new DatabaseSync(databasePath);
+    databaseGlobal.chiaTienDb = new Database(databasePath);
     databaseGlobal.chiaTienDb.exec(schema);
   }
 
