@@ -13,7 +13,6 @@ export async function generateMetadata(): Promise<Metadata> {
   const base = new URL(`${protocol}://${host}`);
   const title = "ChiaNhanh — Chia tiền nhóm thật nhẹ nhàng";
   const description = "Chia tiền nhóm, không chia tình bạn. Tạo nhóm, nhập chi phí và biết chính xác ai cần chuyển cho ai.";
-  const facebookAppId = process.env.FACEBOOK_APP_ID;
   return {
     metadataBase: base,
     title,
@@ -34,7 +33,6 @@ export async function generateMetadata(): Promise<Metadata> {
         alt: "ChiaNhanh — Chia tiền nhóm, không chia tình bạn",
       }],
     },
-    facebook: facebookAppId ? { appId: facebookAppId } : undefined,
     twitter: { card: "summary_large_image", title, description, images: [new URL("/og.png", base).toString()] },
   };
 }
