@@ -219,8 +219,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
         <h1>Mỗi cuộc vui,<br/><em>một phép chia nhẹ nhàng.</em></h1>
         <p>Ghi lại ai đã chi gì, chọn chính xác người tham gia từng khoản và để ChiaNhanh tính luồng chuyển tiền gọn nhất qua một người trung gian.</p>
         <div className="home-group-field">
-          <label htmlFor="new-group-name">Tên nhóm</label>
-          <input id="new-group-name" value={tripName} onChange={e => setTripName(e.target.value)} placeholder="Nhập tên nhóm" autoComplete="off" />
+          <input id="new-group-name" value={tripName} onChange={e => setTripName(e.target.value)} placeholder="Nhập tên nhóm" aria-label="Tên nhóm" autoComplete="off" />
         </div>
         <button onClick={shareGroup} disabled={shareLoading || !tripName.trim()}>{shareLoading ? "Đang tạo link…" : "Chia tiền"}<span>→</span></button>
       </section>
