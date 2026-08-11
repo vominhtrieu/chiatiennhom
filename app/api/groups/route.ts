@@ -38,43 +38,32 @@ export async function POST(request: Request) {
   }));
   const remappedCollectorId = personIdMap.get(collectorId) ?? remappedPeople[0].id;
 
+  const db = getDb();
   try {
-    const db = await getDb();
-    const transaction = await db.transaction("write");
-    try {
-      await transaction.execute({
-        sql: "INSERT INTO groups (id, name, collector_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        args: [id, name.slice(0, 120), remappedCollectorId, now, now],
-      });
-      for (const [index, person] of remappedPeople.entries()) {
-        await transaction.execute({
-          sql: "INSERT INTO people (id, group_id, name, sort_order) VALUES (?, ?, ?, ?)",
-          args: [person.id, id, person.name.slice(0, 80), index],
-        });
-      }
-      for (const person of remappedPeople) {
-        for (const expense of person.expenses) {
-          await transaction.execute({
-            sql: "INSERT INTO expenses (id, group_id, person_id, label, amount) VALUES (?, ?, ?, ?, ?)",
-            args: [expense.id, id, person.id, expense.label.slice(0, 120), Math.max(0, Math.round(expense.amount))],
-          });
-          for (const participantId of expense.splitWith) {
-            await transaction.execute({
-              sql: "INSERT INTO expense_participants (expense_id, person_id, group_id) VALUES (?, ?, ?)",
-              args: [expense.id, participantId, id],
-            });
-          }
+    db.exec("BEGIN IMMEDIATE");
+    db.prepare("INSERT INTO groups (id, name, collector_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, name.slice(0, 120), remappedCollectorId, now, now);
+
+    const insertPerson = db.prepare("INSERT INTO people (id, group_id, name, sort_order) VALUES (?, ?, ?, ?)");
+    for (const [index, person] of remappedPeople.entries()) {
+      insertPerson.run(person.id, id, person.name.slice(0, 80), index);
+    }
+
+    const insertExpense = db.prepare("INSERT INTO expenses (id, group_id, person_id, label, amount) VALUES (?, ?, ?, ?, ?)");
+    const insertParticipant = db.prepare("INSERT INTO expense_participants (expense_id, person_id, group_id) VALUES (?, ?, ?)");
+    for (const person of remappedPeople) {
+      for (const expense of person.expenses) {
+        insertExpense.run(expense.id, id, person.id, expense.label.slice(0, 120), Math.max(0, Math.round(expense.amount)));
+        for (const participantId of expense.splitWith) {
+          insertParticipant.run(expense.id, participantId, id);
         }
       }
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      throw error;
-    } finally {
-      transaction.close();
     }
+
+    db.exec("COMMIT");
     return NextResponse.json({ id, updatedAt: now });
   } catch (error) {
+    try { db.exec("ROLLBACK"); } catch { /* no active transaction */ }
     console.error("Unable to create group", error);
     return NextResponse.json({ error: "Không thể tạo nhóm" }, { status: 500 });
   }

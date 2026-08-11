@@ -1,7 +1,10 @@
-import { createClient, type Client } from "@libsql/client";
+import { resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 const schema = `
 PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+PRAGMA busy_timeout = 5000;
 
 CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY,
@@ -38,34 +41,15 @@ CREATE INDEX IF NOT EXISTS idx_expenses_group_person ON expenses(group_id, perso
 CREATE INDEX IF NOT EXISTS idx_expense_participants_group ON expense_participants(group_id, expense_id);
 `;
 
-type DatabaseGlobal = typeof globalThis & {
-  chiaTienDb?: Client;
-  chiaTienDbReady?: Promise<void>;
-};
-
+type DatabaseGlobal = typeof globalThis & { chiaTienDb?: DatabaseSync };
 const databaseGlobal = globalThis as DatabaseGlobal;
 
-function databaseUrl() {
-  const remoteUrl = process.env.TURSO_DATABASE_URL || process.env.LIBSQL_DATABASE_URL;
-  if (remoteUrl) return remoteUrl;
-
-  if (process.env.NETLIFY) {
-    throw new Error("TURSO_DATABASE_URL is required when running on Netlify");
-  }
-
-  return "file:local.db";
-}
-
-export async function getDb() {
+export function getDb() {
   if (!databaseGlobal.chiaTienDb) {
-    databaseGlobal.chiaTienDb = createClient({
-      url: databaseUrl(),
-      authToken: process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN,
-      intMode: "number",
-    });
+    const databasePath = resolve(/* turbopackIgnore: true */ process.cwd(), process.env.SQLITE_DATABASE_PATH || "local.db");
+    databaseGlobal.chiaTienDb = new DatabaseSync(databasePath);
+    databaseGlobal.chiaTienDb.exec(schema);
   }
 
-  databaseGlobal.chiaTienDbReady ??= databaseGlobal.chiaTienDb.executeMultiple(schema);
-  await databaseGlobal.chiaTienDbReady;
   return databaseGlobal.chiaTienDb;
 }

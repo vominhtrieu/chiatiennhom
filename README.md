@@ -1,6 +1,6 @@
 # Chia nhanh nhóm
 
-Ứng dụng chia tiền nhóm chạy bằng Next.js, SQLite/libSQL và Netlify.
+Ứng dụng chia tiền nhóm chạy local bằng Next.js và SQLite.
 
 ## Yêu cầu
 
@@ -13,24 +13,23 @@ npm install
 npm run dev
 ```
 
-Mở [http://localhost:9999](http://localhost:9999). Khi không cấu hình biến môi trường, app tự tạo file SQLite `local.db` ở thư mục gốc.
+Mở [http://localhost:9999](http://localhost:9999). App tự tạo file SQLite `local.db` ở thư mục gốc, không cần cài hoặc cấu hình database riêng.
 
-## Kiểm tra production build
+Muốn lưu database ở vị trí khác, tạo `.env.local`:
+
+```text
+SQLITE_DATABASE_PATH=/duong/dan/toi/chia-tien.db
+```
+
+## Chạy production trên máy local
 
 ```bash
 npm run build
 npm start
 ```
 
-## Database trên Netlify
+Cả development server và production server đều chạy ở port `9999`.
 
-Filesystem của Netlify Functions không phù hợp để lưu một file SQLite dùng chung. Bản production dùng Turso, một dịch vụ libSQL tương thích SQLite.
+## Lưu ý
 
-Thêm hai biến môi trường sau trong Netlify:
-
-```text
-TURSO_DATABASE_URL=libsql://your-database.turso.io
-TURSO_AUTH_TOKEN=your-token
-```
-
-Schema được tự khởi tạo khi API nhận request đầu tiên. Local và production dùng chung câu lệnh SQLite và cùng cấu trúc dữ liệu.
+File SQLite là dữ liệu local trên một máy và không phù hợp với môi trường serverless.
