@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Mở [http://localhost:3000](http://localhost:3000). Khi không cấu hình biến môi trường, app tự tạo file SQLite `local.db` ở thư mục gốc.
+Mở [http://localhost:9999](http://localhost:9999). Khi không cấu hình biến môi trường, app tự tạo file SQLite `local.db` ở thư mục gốc.
 
 ## Kiểm tra production build
 
