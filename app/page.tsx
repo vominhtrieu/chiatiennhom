@@ -7,11 +7,8 @@ type Person = { id: number; name: string; expenses: Expense[] };
 type Transfer = { from: string; to: string; amount: number };
 
 const initialPeople: Person[] = [
-  { id: 1, name: "Triều", expenses: [{ id: 11, label: "Sở thú", amount: 180000, splitWith: [1,2,3,4,5] }, { id: 12, label: "Ăn chay", amount: 320000, splitWith: [1,2,3,4,5] }] },
-  { id: 2, name: "Hiền", expenses: [{ id: 21, label: "Gà nướng", amount: 199000, splitWith: [1,2,3,4,5] }, { id: 22, label: "Gỏi", amount: 92000, splitWith: [1,2,3,4,5] }, { id: 23, label: "Cá viên chiên", amount: 90000, splitWith: [1,2,3,4,5] }] },
-  { id: 3, name: "Thủy", expenses: [{ id: 31, label: "Ăn vặt", amount: 30000, splitWith: [1,2,3,4,5] }] },
-  { id: 4, name: "Trinh", expenses: [] },
-  { id: 5, name: "Phương", expenses: [] },
+  { id: 1, name: "Người 1", expenses: [] },
+  { id: 2, name: "Người 2", expenses: [] },
 ];
 
 const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
