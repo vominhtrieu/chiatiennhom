@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Expense = { id: number; label: string; amount: number };
+type Expense = { id: number; label: string; amount: number; splitWith: number[] };
 type Person = { id: number; name: string; expenses: Expense[] };
 type Transfer = { from: string; to: string; amount: number };
 
 const initialPeople: Person[] = [
-  { id: 1, name: "Triều", expenses: [{ id: 11, label: "Sở thú", amount: 180000 }, { id: 12, label: "Ăn chay", amount: 320000 }] },
-  { id: 2, name: "Hiền", expenses: [{ id: 21, label: "Gà nướng", amount: 199000 }, { id: 22, label: "Gỏi", amount: 92000 }, { id: 23, label: "Cá viên chiên", amount: 90000 }] },
-  { id: 3, name: "Thủy", expenses: [{ id: 31, label: "Ăn vặt", amount: 30000 }] },
+  { id: 1, name: "Triều", expenses: [{ id: 11, label: "Sở thú", amount: 180000, splitWith: [1,2,3,4,5] }, { id: 12, label: "Ăn chay", amount: 320000, splitWith: [1,2,3,4,5] }] },
+  { id: 2, name: "Hiền", expenses: [{ id: 21, label: "Gà nướng", amount: 199000, splitWith: [1,2,3,4,5] }, { id: 22, label: "Gỏi", amount: 92000, splitWith: [1,2,3,4,5] }, { id: 23, label: "Cá viên chiên", amount: 90000, splitWith: [1,2,3,4,5] }] },
+  { id: 3, name: "Thủy", expenses: [{ id: 31, label: "Ăn vặt", amount: 30000, splitWith: [1,2,3,4,5] }] },
   { id: 4, name: "Trinh", expenses: [] },
   { id: 5, name: "Phương", expenses: [] },
 ];
@@ -28,6 +28,7 @@ export default function Home() {
   const [shareLoading, setShareLoading] = useState(false);
   const [syncState, setSyncState] = useState<"local" | "loading" | "saving" | "synced" | "error">("local");
   const [toast, setToast] = useState("");
+  const [openSplitId, setOpenSplitId] = useState<number | null>(null);
   const lastLocalChange = useRef(0);
   const lastServerUpdate = useRef(0);
 
@@ -83,16 +84,26 @@ export default function Home() {
 
   const localTransfers = useMemo<Transfer[]>(() => {
     if (!collector) return [];
-    return totals
+    const balances = new Map(people.map(person => [person.id, 0]));
+    for (const payer of people) {
+      for (const expense of payer.expenses) {
+        const participantIds = expense.splitWith?.filter(id => balances.has(id)) ?? people.map(person => person.id);
+        if (!participantIds.length) continue;
+        balances.set(payer.id, (balances.get(payer.id) ?? 0) + expense.amount);
+        const share = expense.amount / participantIds.length;
+        participantIds.forEach(id => balances.set(id, (balances.get(id) ?? 0) - share));
+      }
+    }
+    return people
       .filter(p => p.id !== collector.id)
       .map(p => {
-        const balance = p.total - perPerson;
+        const balance = balances.get(p.id) ?? 0;
         return balance < 0
           ? { from: p.name, to: collector.name, amount: -balance }
           : { from: collector.name, to: p.name, amount: balance };
       })
       .filter(t => t.amount > 0.5);
-  }, [collector, perPerson, totals]);
+  }, [collector, people]);
 
   const transfers = serverTransfers ?? localTransfers;
 
@@ -111,9 +122,10 @@ export default function Home() {
 
   function addExpense(personId: number) {
     const id = newNumericId();
-    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0 }] } : p));
+    const participantIds = people.map(person => person.id);
+    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0, splitWith: participantIds }] } : p));
     setServerTransfers(null);
-    void mutate({ action: "addExpense", personId, expenseId: id });
+    void mutate({ action: "addExpense", personId, expenseId: id, participantIds });
   }
 
   function removeExpense(personId: number, expenseId: number) {
@@ -131,11 +143,25 @@ export default function Home() {
 
   function removePerson(id: number) {
     if (people.length <= 2) return;
-    const next = people.filter(p => p.id !== id);
+    const next = people.filter(p => p.id !== id).map(person => ({ ...person, expenses: person.expenses.map(expense => {
+      const splitWith = expense.splitWith.filter(personId => personId !== id);
+      return { ...expense, splitWith: splitWith.length ? splitWith : [person.id] };
+    }) }));
     setPeople(next);
     if (collectorId === id) setCollectorId(next[0].id);
     setServerTransfers(null);
     void mutate({ action: "deletePerson", personId: id });
+  }
+
+  function toggleParticipant(expenseId: number, personId: number) {
+    const expense = people.flatMap(person => person.expenses).find(item => item.id === expenseId);
+    if (!expense) return;
+    const selected = expense.splitWith.includes(personId);
+    if (selected && expense.splitWith.length === 1) { setToast("Một khoản chi cần ít nhất một người"); window.setTimeout(() => setToast(""), 1600); return; }
+    const updatedIds = selected ? expense.splitWith.filter(id => id !== personId) : [...expense.splitWith, personId];
+    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWith: updatedIds } : item) })));
+    setServerTransfers(null);
+    void mutate({ action: "updateExpenseParticipants", expenseId, participantIds: updatedIds });
   }
 
   function selectCollector(id: number) {
@@ -219,10 +245,14 @@ export default function Home() {
                 <div className="expense-list">
                   {person.expenses.length === 0 && <div className="empty-expense">Chưa có khoản chi nào</div>}
                   {person.expenses.map(expense => (
-                    <div className="expense-row" key={expense.id}>
+                    <div className="expense-block" key={expense.id}>
+                    <div className="expense-row">
                       <input placeholder="Tên khoản chi" value={expense.label} onChange={e => updateExpense(person.id, expense.id, { label: e.target.value })} aria-label="Tên khoản chi" />
                       <div className="amount-field"><input inputMode="numeric" value={expense.amount || ""} placeholder="0" onChange={e => updateExpense(person.id, expense.id, { amount: Number(e.target.value.replace(/\D/g, "")) })} aria-label="Số tiền" /><span>₫</span></div>
+                      <button className={`split-trigger ${expense.splitWith.length < people.length ? "partial" : ""}`} onClick={() => setOpenSplitId(openSplitId === expense.id ? null : expense.id)} aria-expanded={openSplitId === expense.id}>◎ {expense.splitWith.length === people.length ? "Cả nhóm" : `${expense.splitWith.length} người`} <span>⌄</span></button>
                       <button className="remove" onClick={() => removeExpense(person.id, expense.id)} aria-label="Xóa khoản chi">×</button>
+                    </div>
+                    {openSplitId === expense.id && <div className="split-panel"><div><b>Chia khoản này cho ai?</b><button onClick={() => setOpenSplitId(null)}>Xong</button></div><div className="split-options">{people.map(member => <label className={expense.splitWith.includes(member.id) ? "checked" : ""} key={member.id}><input type="checkbox" checked={expense.splitWith.includes(member.id)} onChange={() => toggleParticipant(expense.id, member.id)} /><span>✓</span>{member.name}</label>)}</div></div>}
                     </div>
                   ))}
                 </div>
