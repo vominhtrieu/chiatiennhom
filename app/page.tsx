@@ -28,6 +28,13 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [openSplitId, setOpenSplitId] = useState<number | null>(null);
   const lastLocalChange = useRef(0);
   const lastServerUpdate = useRef(0);
+  const saveTimers = useRef(new Map<string, number>());
+  const activeSaves = useRef(0);
+
+  useEffect(() => () => {
+    saveTimers.current.forEach(timer => window.clearTimeout(timer));
+    saveTimers.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!groupRoute) return;
@@ -66,13 +73,40 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
 
   async function mutate(payload: Record<string, unknown>) {
     if (!groupId) return;
-    lastLocalChange.current = Date.now(); setSyncState("saving");
+    lastLocalChange.current = Date.now();
+    activeSaves.current += 1;
+    setSyncState("saving");
     try {
       const response = await fetch(`/api/groups/${groupId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      lastServerUpdate.current = data.updatedAt; setSyncState("synced");
+      lastServerUpdate.current = Math.max(lastServerUpdate.current, data.updatedAt);
     } catch { setSyncState("error"); }
+    finally {
+      activeSaves.current -= 1;
+      if (activeSaves.current === 0 && saveTimers.current.size === 0) setSyncState(current => current === "error" ? current : "synced");
+    }
+  }
+
+  function mutateDebounced(key: string, payload: Record<string, unknown>) {
+    if (!groupId) return;
+    const currentTimer = saveTimers.current.get(key);
+    if (currentTimer !== undefined) window.clearTimeout(currentTimer);
+    lastLocalChange.current = Date.now();
+    setSyncState("saving");
+    const timer = window.setTimeout(() => {
+      saveTimers.current.delete(key);
+      void mutate(payload);
+    }, 600);
+    saveTimers.current.set(key, timer);
+  }
+
+  function cancelDebounced(prefix: string) {
+    saveTimers.current.forEach((timer, key) => {
+      if (!key.startsWith(prefix)) return;
+      window.clearTimeout(timer);
+      saveTimers.current.delete(key);
+    });
   }
 
   const totals = useMemo(() => people.map(p => ({ ...p, total: p.expenses.reduce((s, e) => s + Number(e.amount || 0), 0) })), [people]);
@@ -107,14 +141,14 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   function updatePerson(id: number, patch: Partial<Person>) {
     setPeople(list => list.map(p => p.id === id ? { ...p, ...patch } : p));
     setServerTransfers(null);
-    if (patch.name !== undefined) void mutate({ action: "updatePerson", personId: id, name: patch.name });
+    if (patch.name !== undefined) mutateDebounced(`person:${id}:name`, { action: "updatePerson", personId: id, name: patch.name });
   }
 
   function updateExpense(personId: number, expenseId: number, patch: Partial<Expense>) {
     setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: p.expenses.map(e => e.id === expenseId ? { ...e, ...patch } : e) } : p));
     setServerTransfers(null);
-    if (patch.label !== undefined) void mutate({ action: "updateExpense", expenseId, field: "label", value: patch.label });
-    if (patch.amount !== undefined) void mutate({ action: "updateExpense", expenseId, field: "amount", value: patch.amount });
+    if (patch.label !== undefined) mutateDebounced(`expense:${expenseId}:label`, { action: "updateExpense", expenseId, field: "label", value: patch.label });
+    if (patch.amount !== undefined) mutateDebounced(`expense:${expenseId}:amount`, { action: "updateExpense", expenseId, field: "amount", value: patch.amount });
   }
 
   function addExpense(personId: number) {
@@ -126,6 +160,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   }
 
   function removeExpense(personId: number, expenseId: number) {
+    cancelDebounced(`expense:${expenseId}:`);
     setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: p.expenses.filter(e => e.id !== expenseId) } : p));
     setServerTransfers(null);
     void mutate({ action: "deleteExpense", expenseId });
@@ -140,6 +175,8 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
 
   function removePerson(id: number) {
     if (people.length <= 2) return;
+    cancelDebounced(`person:${id}:`);
+    people.find(person => person.id === id)?.expenses.forEach(expense => cancelDebounced(`expense:${expense.id}:`));
     const next = people.filter(p => p.id !== id).map(person => ({ ...person, expenses: person.expenses.map(expense => {
       const splitWith = expense.splitWith.filter(personId => personId !== id);
       return { ...expense, splitWith: splitWith.length ? splitWith : [person.id] };
@@ -168,7 +205,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
 
   function renameTrip(name: string) {
     setTripName(name);
-    void mutate({ action: "renameGroup", name });
+    mutateDebounced("group:name", { action: "renameGroup", name });
   }
 
   async function shareGroup() {
