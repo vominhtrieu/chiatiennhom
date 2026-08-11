@@ -23,7 +23,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [serverTransfers, setServerTransfers] = useState<Transfer[] | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
-  const [syncState, setSyncState] = useState<"local" | "loading" | "saving" | "synced" | "error">("local");
+  const [syncState, setSyncState] = useState<"local" | "loading" | "saving" | "synced" | "error">(groupRoute ? "loading" : "local");
   const [toast, setToast] = useState("");
   const [openSplitId, setOpenSplitId] = useState<number | null>(null);
   const lastLocalChange = useRef(0);
@@ -229,12 +229,25 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
     </main>;
   }
 
+  if (syncState === "loading") {
+    return <main className="group-loading-page">
+      <header className="topbar">
+        <div className="brand"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></div>
+      </header>
+      <section className="group-loading" role="status" aria-live="polite">
+        <span className="loading-spinner" aria-hidden="true"></span>
+        <strong>Đang tải dữ liệu nhóm…</strong>
+        <p>Chờ một chút nhé.</p>
+      </section>
+    </main>;
+  }
+
   return (
     <main>
       <header className="topbar">
         <a className="brand" href="#"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
         <div className="header-actions">
-          {groupId && <span className={`sync-status ${syncState}`}><i></i>{syncState === "saving" ? "Đang lưu" : syncState === "loading" ? "Đang tải" : syncState === "error" ? "Mất kết nối" : "Đã đồng bộ"}</span>}
+          {groupId && <span className={`sync-status ${syncState}`}><i></i>{syncState === "saving" ? "Đang lưu" : syncState === "error" ? "Mất kết nối" : "Đã đồng bộ"}</span>}
           <button className="share-button" onClick={shareGroup} disabled={shareLoading || !groupId}>{shareLoading || !groupId ? "Đang tải…" : "↗ Sao chép link"}</button>
         </div>
       </header>
