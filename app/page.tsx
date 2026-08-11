@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Expense = { id: number; label: string; amount: number };
 type Person = { id: number; name: string; expenses: Expense[] };
@@ -15,6 +15,7 @@ const initialPeople: Person[] = [
 ];
 
 const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
+const newNumericId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
 
 export default function Home() {
   const [people, setPeople] = useState<Person[]>(initialPeople);
@@ -23,6 +24,57 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [serverTransfers, setServerTransfers] = useState<Transfer[] | null>(null);
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [syncState, setSyncState] = useState<"local" | "loading" | "saving" | "synced" | "error">("local");
+  const [toast, setToast] = useState("");
+  const lastLocalChange = useRef(0);
+  const lastServerUpdate = useRef(0);
+
+  useEffect(() => {
+    const match = window.location.pathname.match(/^\/g\/([a-z0-9]+)$/);
+    if (!match) return;
+    const id = match[1];
+    setGroupId(id);
+    setSyncState("loading");
+    fetch(`/api/groups/${id}`).then(async response => {
+      if (!response.ok) throw new Error("not-found");
+      const data = await response.json();
+      setTripName(data.name); setPeople(data.people); setCollectorId(data.collectorId);
+      lastServerUpdate.current = data.updatedAt; setSyncState("synced");
+    }).catch(() => { setSyncState("error"); setToast("Không tìm thấy nhóm chia tiền này"); });
+  }, []);
+
+  useEffect(() => {
+    if (!groupId) return;
+    const timer = window.setInterval(async () => {
+      if (Date.now() - lastLocalChange.current < 1800) return;
+      try {
+        const response = await fetch(`/api/groups/${groupId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.updatedAt > lastServerUpdate.current) {
+          setTripName(data.name); setPeople(data.people); setCollectorId(data.collectorId);
+          lastServerUpdate.current = data.updatedAt; setServerTransfers(null);
+          setToast("Đã nhận cập nhật mới từ nhóm");
+          window.setTimeout(() => setToast(""), 1600);
+        }
+        setSyncState("synced");
+      } catch { setSyncState("error"); }
+    }, 3500);
+    return () => window.clearInterval(timer);
+  }, [groupId]);
+
+  async function mutate(payload: Record<string, unknown>) {
+    if (!groupId) return;
+    lastLocalChange.current = Date.now(); setSyncState("saving");
+    try {
+      const response = await fetch(`/api/groups/${groupId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      lastServerUpdate.current = data.updatedAt; setSyncState("synced");
+    } catch { setSyncState("error"); }
+  }
 
   const totals = useMemo(() => people.map(p => ({ ...p, total: p.expenses.reduce((s, e) => s + Number(e.amount || 0), 0) })), [people]);
   const grandTotal = totals.reduce((s, p) => s + p.total, 0);
@@ -47,27 +99,34 @@ export default function Home() {
   function updatePerson(id: number, patch: Partial<Person>) {
     setPeople(list => list.map(p => p.id === id ? { ...p, ...patch } : p));
     setServerTransfers(null);
+    if (patch.name !== undefined) void mutate({ action: "updatePerson", personId: id, name: patch.name });
   }
 
   function updateExpense(personId: number, expenseId: number, patch: Partial<Expense>) {
     setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: p.expenses.map(e => e.id === expenseId ? { ...e, ...patch } : e) } : p));
     setServerTransfers(null);
+    if (patch.label !== undefined) void mutate({ action: "updateExpense", expenseId, field: "label", value: patch.label });
+    if (patch.amount !== undefined) void mutate({ action: "updateExpense", expenseId, field: "amount", value: patch.amount });
   }
 
   function addExpense(personId: number) {
-    const id = Date.now();
+    const id = newNumericId();
     setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0 }] } : p));
     setServerTransfers(null);
+    void mutate({ action: "addExpense", personId, expenseId: id });
   }
 
   function removeExpense(personId: number, expenseId: number) {
     setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: p.expenses.filter(e => e.id !== expenseId) } : p));
     setServerTransfers(null);
+    void mutate({ action: "deleteExpense", expenseId });
   }
 
   function addPerson() {
-    const id = Date.now();
-    setPeople(list => [...list, { id, name: `Người ${list.length + 1}`, expenses: [] }]);
+    const id = newNumericId();
+    const name = `Người ${people.length + 1}`;
+    setPeople(list => [...list, { id, name, expenses: [] }]);
+    void mutate({ action: "addPerson", personId: id, name });
   }
 
   function removePerson(id: number) {
@@ -76,6 +135,36 @@ export default function Home() {
     setPeople(next);
     if (collectorId === id) setCollectorId(next[0].id);
     setServerTransfers(null);
+    void mutate({ action: "deletePerson", personId: id });
+  }
+
+  function selectCollector(id: number) {
+    setCollectorId(id); setServerTransfers(null);
+    void mutate({ action: "selectCollector", personId: id });
+  }
+
+  function renameTrip(name: string) {
+    setTripName(name);
+    void mutate({ action: "renameGroup", name });
+  }
+
+  async function shareGroup() {
+    setShareLoading(true);
+    try {
+      let id = groupId;
+      if (!id) {
+        const response = await fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: tripName, collectorId, people }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        id = data.id; setGroupId(id); lastServerUpdate.current = data.updatedAt;
+        window.history.replaceState({}, "", `/g/${id}`); setSyncState("synced");
+      }
+      const url = `${window.location.origin}/g/${id}`;
+      await navigator.clipboard.writeText(url);
+      setToast("Đã sao chép link — gửi cho cả nhóm nhé!");
+      window.setTimeout(() => setToast(""), 2200);
+    } catch { setToast("Chưa thể tạo link, hãy thử lại"); }
+    finally { setShareLoading(false); }
   }
 
   async function calculate() {
@@ -100,13 +189,16 @@ export default function Home() {
     <main>
       <header className="topbar">
         <a className="brand" href="#"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
-        <div className="header-actions"><button className="icon-button" aria-label="Đổi giao diện">☼</button><button className="avatar" aria-label="Tài khoản">TV</button></div>
+        <div className="header-actions">
+          {groupId && <span className={`sync-status ${syncState}`}><i></i>{syncState === "saving" ? "Đang lưu" : syncState === "loading" ? "Đang tải" : syncState === "error" ? "Mất kết nối" : "Đã đồng bộ"}</span>}
+          <button className="share-button" onClick={shareGroup} disabled={shareLoading}>{shareLoading ? "Đang tạo…" : groupId ? "↗ Sao chép link" : "↗ Chia sẻ với nhóm"}</button>
+        </div>
       </header>
 
       <section className="hero">
         <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
-        <input className="trip-title" value={tripName} onChange={e => setTripName(e.target.value)} aria-label="Tên chuyến đi" />
-        <p>Thêm chi tiêu, chọn người trung gian, và để chúng mình tính phần còn lại.</p>
+        <input className="trip-title" value={tripName} onChange={e => renameTrip(e.target.value)} aria-label="Tên chuyến đi" />
+        <p>{groupId ? "Mọi người trong nhóm có thể nhập cùng lúc — thay đổi được tự động đồng bộ." : "Thêm chi tiêu, chọn người trung gian, rồi chia sẻ link để cả nhóm cùng nhập."}</p>
         <div className="stats">
           <div><span>Tổng chi</span><strong>{money.format(grandTotal)}</strong></div>
           <i></i><div><span>Mỗi người</span><strong>{money.format(perPerson)}</strong></div>
@@ -147,7 +239,7 @@ export default function Home() {
             <div className="collector-options">
               {people.map(person => (
                 <label className={person.id === collectorId ? "selected" : ""} key={person.id}>
-                  <input type="radio" name="collector" checked={person.id === collectorId} onChange={() => { setCollectorId(person.id); setServerTransfers(null); }} />
+                  <input type="radio" name="collector" checked={person.id === collectorId} onChange={() => selectCollector(person.id)} />
                   <span className="radio-dot"></span><span className="mini-avatar">{person.name.slice(0, 1).toUpperCase()}</span><b>{person.name}</b>
                   {person.id === collectorId && <em>Trung gian</em>}
                 </label>
@@ -174,6 +266,7 @@ export default function Home() {
           <div className="tip"><span>✦</span><p><b>Mẹo nhỏ</b>Chọn người có số dư lớn nhất làm trung gian để giảm số lần chuyển.</p></div>
         </aside>
       </div>
+      {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
       <footer><span><b>c</b> chia<span>nhanh</span></span><p>Tính minh bạch. Chuyển nhẹ nhàng.</p></footer>
     </main>
   );
