@@ -17,7 +17,7 @@ const initialPeople: Person[] = [
 const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const newNumericId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
 
-export default function Home() {
+export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [people, setPeople] = useState<Person[]>(initialPeople);
   const [collectorId, setCollectorId] = useState(1);
   const [tripName, setTripName] = useState("Ăn chơi cuối tuần");
@@ -33,6 +33,7 @@ export default function Home() {
   const lastServerUpdate = useRef(0);
 
   useEffect(() => {
+    if (!groupRoute) return;
     const match = window.location.pathname.match(/^\/g\/([a-z0-9]+)$/);
     if (!match) return;
     const id = match[1];
@@ -44,7 +45,7 @@ export default function Home() {
       setTripName(data.name); setPeople(data.people); setCollectorId(data.collectorId);
       lastServerUpdate.current = data.updatedAt; setSyncState("synced");
     }).catch(() => { setSyncState("error"); setToast("Không tìm thấy nhóm chia tiền này"); });
-  }, []);
+  }, [groupRoute]);
 
   useEffect(() => {
     if (!groupId) return;
@@ -182,9 +183,9 @@ export default function Home() {
         const response = await fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: tripName, collectorId, people }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
-        id = data.id; setGroupId(id); lastServerUpdate.current = data.updatedAt;
-        window.history.replaceState({}, "", `/g/${id}`); setSyncState("synced");
+        id = data.id; setGroupId(id); lastServerUpdate.current = data.updatedAt; setSyncState("synced");
       }
+      if (!groupRoute) { window.location.assign(`/g/${id}`); return; }
       const url = `${window.location.origin}/g/${id}`;
       await navigator.clipboard.writeText(url);
       setToast("Đã sao chép link — gửi cho cả nhóm nhé!");
@@ -211,13 +212,17 @@ export default function Home() {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  if (!groupRoute) {
+    return <main className="home-start"><button onClick={shareGroup} disabled={shareLoading}>{shareLoading ? "Đang tạo link…" : "Chia tiền"}<span>→</span></button></main>;
+  }
+
   return (
     <main>
       <header className="topbar">
         <a className="brand" href="#"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
         <div className="header-actions">
           {groupId && <span className={`sync-status ${syncState}`}><i></i>{syncState === "saving" ? "Đang lưu" : syncState === "loading" ? "Đang tải" : syncState === "error" ? "Mất kết nối" : "Đã đồng bộ"}</span>}
-          <button className="share-button" onClick={shareGroup} disabled={shareLoading}>{shareLoading ? "Đang tạo…" : groupId ? "↗ Sao chép link" : "↗ Chia sẻ với nhóm"}</button>
+          <button className="share-button" onClick={shareGroup} disabled={shareLoading || !groupId}>{shareLoading || !groupId ? "Đang tải…" : "↗ Sao chép link"}</button>
         </div>
       </header>
 
