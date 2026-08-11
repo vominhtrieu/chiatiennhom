@@ -17,7 +17,7 @@ const newNumericId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
 export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [people, setPeople] = useState<Person[]>(initialPeople);
   const [collectorId, setCollectorId] = useState(1);
-  const [tripName, setTripName] = useState("Nhóm mới");
+  const [tripName, setTripName] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [serverTransfers, setServerTransfers] = useState<Transfer[] | null>(null);
@@ -211,14 +211,18 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   if (!groupRoute) {
     return <main className="home-start">
       <header className="home-header">
-        <div className="brand"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></div>
+        <a className="brand" href="/"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
         <span className="home-note">Miễn phí · Không cần đăng nhập</span>
       </header>
       <section className="home-hero">
         <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
         <h1>Mỗi cuộc vui,<br/><em>một phép chia nhẹ nhàng.</em></h1>
         <p>Ghi lại ai đã chi gì, chọn chính xác người tham gia từng khoản và để ChiaNhanh tính luồng chuyển tiền gọn nhất qua một người trung gian.</p>
-        <button onClick={shareGroup} disabled={shareLoading}>{shareLoading ? "Đang tạo link…" : "Chia tiền"}<span>→</span></button>
+        <div className="home-group-field">
+          <label htmlFor="new-group-name">Tên nhóm</label>
+          <input id="new-group-name" value={tripName} onChange={e => setTripName(e.target.value)} placeholder="Nhập tên nhóm" autoComplete="off" />
+        </div>
+        <button onClick={shareGroup} disabled={shareLoading || !tripName.trim()}>{shareLoading ? "Đang tạo link…" : "Chia tiền"}<span>→</span></button>
       </section>
       <section className="home-features" aria-label="Điểm nổi bật">
         <div><span>01</span><b>Chia đúng người</b><p>Mỗi khoản có thể áp dụng cho một người, vài người hoặc cả nhóm.</p></div>
@@ -232,7 +236,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   if (syncState === "loading") {
     return <main className="group-loading-page">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></div>
+        <a className="brand" href="/"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
       </header>
       <section className="group-loading" role="status" aria-live="polite">
         <span className="loading-spinner" aria-hidden="true"></span>
@@ -245,7 +249,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   return (
     <main>
       <header className="topbar">
-        <a className="brand" href="#"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
+        <a className="brand" href="/"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></a>
         <div className="header-actions">
           {groupId && <span className={`sync-status ${syncState}`}><i></i>{syncState === "saving" ? "Đang lưu" : syncState === "error" ? "Mất kết nối" : "Đã đồng bộ"}</span>}
           <button className="share-button" onClick={shareGroup} disabled={shareLoading || !groupId}>{shareLoading || !groupId ? "Đang tải…" : "↗ Sao chép link"}</button>
@@ -254,10 +258,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
 
       <section className="hero">
         <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
-        <div className="group-name-field">
-          <label htmlFor="group-name">Tên nhóm</label>
-          <input id="group-name" value={tripName} onChange={e => renameTrip(e.target.value)} placeholder="Nhập tên nhóm" />
-        </div>
+        <input className="trip-title" value={tripName} onChange={e => renameTrip(e.target.value)} placeholder="Tên nhóm" aria-label="Tên nhóm" />
         <p>{groupId ? "Mọi người trong nhóm có thể nhập cùng lúc — thay đổi được tự động đồng bộ." : "Thêm chi tiêu, chọn người trung gian, rồi chia sẻ link để cả nhóm cùng nhập."}</p>
         <div className="stats">
           <div><span>Tổng chi</span><strong>{money.format(grandTotal)}</strong></div>
