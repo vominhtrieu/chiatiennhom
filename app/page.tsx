@@ -20,7 +20,7 @@ const newNumericId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
 export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [people, setPeople] = useState<Person[]>(initialPeople);
   const [collectorId, setCollectorId] = useState(1);
-  const [tripName, setTripName] = useState("Ăn chơi cuối tuần");
+  const [tripName, setTripName] = useState("Nhóm mới");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [serverTransfers, setServerTransfers] = useState<Transfer[] | null>(null);
@@ -80,7 +80,6 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
 
   const totals = useMemo(() => people.map(p => ({ ...p, total: p.expenses.reduce((s, e) => s + Number(e.amount || 0), 0) })), [people]);
   const grandTotal = totals.reduce((s, p) => s + p.total, 0);
-  const perPerson = people.length ? grandTotal / people.length : 0;
   const collector = people.find(p => p.id === collectorId) ?? people[0];
 
   const localTransfers = useMemo<Transfer[]>(() => {
@@ -245,11 +244,13 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
 
       <section className="hero">
         <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
-        <input className="trip-title" value={tripName} onChange={e => renameTrip(e.target.value)} aria-label="Tên chuyến đi" />
+        <div className="group-name-field">
+          <label htmlFor="group-name">Tên nhóm</label>
+          <input id="group-name" value={tripName} onChange={e => renameTrip(e.target.value)} placeholder="Nhập tên nhóm" />
+        </div>
         <p>{groupId ? "Mọi người trong nhóm có thể nhập cùng lúc — thay đổi được tự động đồng bộ." : "Thêm chi tiêu, chọn người trung gian, rồi chia sẻ link để cả nhóm cùng nhập."}</p>
         <div className="stats">
           <div><span>Tổng chi</span><strong>{money.format(grandTotal)}</strong></div>
-          <i></i><div><span>Mỗi người</span><strong>{money.format(perPerson)}</strong></div>
           <i></i><div><span>Thành viên</span><strong>{people.length} người</strong></div>
         </div>
       </section>
