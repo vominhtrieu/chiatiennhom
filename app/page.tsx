@@ -213,7 +213,24 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   }
 
   if (!groupRoute) {
-    return <main className="home-start"><button onClick={shareGroup} disabled={shareLoading}>{shareLoading ? "Đang tạo link…" : "Chia tiền"}<span>→</span></button></main>;
+    return <main className="home-start">
+      <header className="home-header">
+        <div className="brand"><span className="brand-mark">c</span><span>chia<span>nhanh</span></span></div>
+        <span className="home-note">Miễn phí · Không cần đăng nhập</span>
+      </header>
+      <section className="home-hero">
+        <div className="eyebrow"><span></span> Chia tiền nhóm, không chia tình bạn</div>
+        <h1>Mỗi cuộc vui,<br/><em>một phép chia nhẹ nhàng.</em></h1>
+        <p>Ghi lại ai đã chi gì, chọn chính xác người tham gia từng khoản và để ChiaNhanh tính luồng chuyển tiền gọn nhất qua một người trung gian.</p>
+        <button onClick={shareGroup} disabled={shareLoading}>{shareLoading ? "Đang tạo link…" : "Chia tiền"}<span>→</span></button>
+      </section>
+      <section className="home-features" aria-label="Điểm nổi bật">
+        <div><span>01</span><b>Chia đúng người</b><p>Mỗi khoản có thể áp dụng cho một người, vài người hoặc cả nhóm.</p></div>
+        <div><span>02</span><b>Cùng nhau nhập</b><p>Một đường link riêng để mọi người cập nhật chung một danh sách.</p></div>
+        <div><span>03</span><b>Chuyển thật gọn</b><p>Chọn người trung gian, app tự tính chính xác ai chuyển cho ai.</p></div>
+      </section>
+      <footer className="home-footer"><span>Chia minh bạch.</span><p>Giữ cuộc vui nhẹ tênh.</p></footer>
+    </main>;
   }
 
   return (
