@@ -293,7 +293,6 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
                 <label className={person.id === collectorId ? "selected" : ""} key={person.id}>
                   <input type="radio" name="collector" checked={person.id === collectorId} onChange={() => selectCollector(person.id)} />
                   <span className="radio-dot"></span><span className="mini-avatar">{person.name.slice(0, 1).toUpperCase()}</span><b>{person.name}</b>
-                  {person.id === collectorId && <em>Trung gian</em>}
                 </label>
               ))}
             </div>
