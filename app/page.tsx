@@ -321,7 +321,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
               ))}
               {transfers.length === 0 && <div className="all-set">✓ Cả nhóm đã cân bằng!</div>}
             </div>
-            <button className="calculate" onClick={calculate} disabled={loading}>{loading ? "Đang tính…" : "Tính lại trên máy chủ"} <span>→</span></button>
+            <button className="calculate" onClick={calculate} disabled={loading}>{loading ? "Đang tính…" : "Tính tiền"} <span>→</span></button>
             <button className="copy" onClick={copySummary}>{copied ? "✓ Đã sao chép" : "▣ Sao chép kết quả"}</button>
           </section>
           <div className="tip"><span>✦</span><p><b>Mẹo nhỏ</b>Chọn người có số dư lớn nhất làm trung gian để giảm số lần chuyển.</p></div>
