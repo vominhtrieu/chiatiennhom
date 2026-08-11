@@ -8,16 +8,34 @@ const display = Manrope({ variable: "--font-display", subsets: ["latin", "vietna
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:9999";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const base = new URL(`${protocol}://${host}`);
+  const title = "ChiaNhanh — Chia tiền nhóm thật nhẹ nhàng";
+  const description = "Chia tiền nhóm, không chia tình bạn. Tạo nhóm, nhập chi phí và biết chính xác ai cần chuyển cho ai.";
+  const facebookAppId = process.env.FACEBOOK_APP_ID;
   return {
     metadataBase: base,
-    title: "ChiaNhanh — Chia tiền nhóm thật nhẹ nhàng",
-    description: "Ứng dụng chia chi phí nhóm với một người trung gian nhận và chuyển tiền.",
+    title,
+    description,
+    alternates: { canonical: base },
     icons: { icon: "/favicon.svg" },
-    openGraph: { title: "ChiaNhanh", description: "Chia tiền nhóm, không chia tình bạn", images: [{ url: new URL("/og.png", base).toString(), width: 1792, height: 928 }] },
-    twitter: { card: "summary_large_image", title: "ChiaNhanh", description: "Chia tiền nhóm, không chia tình bạn", images: [new URL("/og.png", base).toString()] },
+    openGraph: {
+      type: "website",
+      locale: "vi_VN",
+      siteName: "ChiaNhanh",
+      url: base,
+      title,
+      description,
+      images: [{
+        url: new URL("/og.png", base).toString(),
+        width: 1792,
+        height: 928,
+        alt: "ChiaNhanh — Chia tiền nhóm, không chia tình bạn",
+      }],
+    },
+    facebook: facebookAppId ? { appId: facebookAppId } : undefined,
+    twitter: { card: "summary_large_image", title, description, images: [new URL("/og.png", base).toString()] },
   };
 }
 
