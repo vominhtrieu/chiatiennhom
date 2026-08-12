@@ -4,6 +4,9 @@ import Home from "../../page";
 
 type GroupPageProps = { params: Promise<{ id: string }> };
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: GroupPageProps): Promise<Metadata> {
   const { id } = await params;
   const group = getDb().prepare("SELECT name FROM groups WHERE id = ?").get(id) as { name: string } | undefined;
@@ -32,6 +35,8 @@ export async function generateMetadata({ params }: GroupPageProps): Promise<Meta
   };
 }
 
-export default function GroupPage() {
+export default async function GroupPage({ params }: GroupPageProps) {
+  const { id } = await params;
+  getDb().prepare("UPDATE groups SET last_viewed_at = ? WHERE id = ?").run(Date.now(), id);
   return <Home groupRoute />;
 }

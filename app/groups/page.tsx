@@ -14,6 +14,7 @@ type GroupSummary = {
   name: string;
   createdAt: number;
   updatedAt: number;
+  lastViewedAt: number | null;
   peopleCount: number;
   expenseCount: number;
   totalAmount: number;
@@ -38,6 +39,7 @@ function getGroups() {
       g.name,
       g.created_at AS createdAt,
       g.updated_at AS updatedAt,
+      g.last_viewed_at AS lastViewedAt,
       (SELECT COUNT(*) FROM people p WHERE p.group_id = g.id) AS peopleCount,
       (SELECT COUNT(*) FROM expenses e WHERE e.group_id = g.id) AS expenseCount,
       (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.group_id = g.id) AS totalAmount
@@ -79,6 +81,7 @@ export default function GroupsPage() {
                   <th>Khoản chi</th>
                   <th>Tổng chi</th>
                   <th>Cập nhật</th>
+                  <th>Xem gần nhất</th>
                   <th><span className="sr-only">Mở nhóm</span></th>
                 </tr>
               </thead>
@@ -95,6 +98,13 @@ export default function GroupsPage() {
                     <td>
                       <time dateTime={new Date(group.updatedAt).toISOString()}>{dateTime.format(group.updatedAt)}</time>
                       <small>Tạo {dateTime.format(group.createdAt)}</small>
+                    </td>
+                    <td>
+                      {group.lastViewedAt ? (
+                        <time dateTime={new Date(group.lastViewedAt).toISOString()}>{dateTime.format(group.lastViewedAt)}</time>
+                      ) : (
+                        <span className="not-viewed">Chưa từng xem</span>
+                      )}
                     </td>
                     <td><a className="group-open-link" href={`/g/${group.id}`} aria-label={`Mở nhóm ${group.name}`}>→</a></td>
                   </tr>

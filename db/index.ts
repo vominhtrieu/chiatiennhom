@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS groups (
   name TEXT NOT NULL,
   collector_id INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  last_viewed_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS people (
@@ -49,6 +50,14 @@ export function getDb() {
     const databasePath = resolve(/* turbopackIgnore: true */ process.cwd(), process.env.SQLITE_DATABASE_PATH || "local.db");
     databaseGlobal.chiaTienDb = new Database(databasePath);
     databaseGlobal.chiaTienDb.exec(schema);
+    const groupColumns = databaseGlobal.chiaTienDb.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+    if (!groupColumns.some(column => column.name === "last_viewed_at")) {
+      try {
+        databaseGlobal.chiaTienDb.exec("ALTER TABLE groups ADD COLUMN last_viewed_at INTEGER");
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
   }
 
   return databaseGlobal.chiaTienDb;
