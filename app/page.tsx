@@ -23,6 +23,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [serverTransfers, setServerTransfers] = useState<Transfer[] | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [syncState, setSyncState] = useState<"local" | "loading" | "saving" | "synced" | "error">(groupRoute ? "loading" : "local");
   const [toast, setToast] = useState("");
   const [openSplitId, setOpenSplitId] = useState<number | null>(null);
@@ -245,6 +246,25 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  async function deleteGroup() {
+    if (!groupId || deleteLoading) return;
+    if (!window.confirm(`Xóa nhóm “${tripName}”? Toàn bộ thành viên và khoản chi sẽ bị xóa vĩnh viễn.`)) return;
+
+    setDeleteLoading(true);
+    saveTimers.current.forEach(timer => window.clearTimeout(timer));
+    saveTimers.current.clear();
+    try {
+      const response = await fetch(`/api/groups/${groupId}`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      window.location.assign("/");
+    } catch {
+      setDeleteLoading(false);
+      setToast("Không thể xóa nhóm, hãy thử lại");
+      window.setTimeout(() => setToast(""), 2200);
+    }
+  }
+
   if (!groupRoute) {
     return <main className="home-start">
       <header className="home-header">
@@ -375,6 +395,7 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
             <button className="copy" onClick={copySummary}>{copied ? "✓ Đã sao chép" : "▣ Sao chép kết quả"}</button>
           </section>
           <div className="tip"><span>✦</span><p><b>Mẹo nhỏ</b>Chọn người có số dư lớn nhất làm trung gian để giảm số lần chuyển.</p></div>
+          <button className="delete-group" onClick={deleteGroup} disabled={deleteLoading}>{deleteLoading ? "Đang xóa…" : "Xóa nhóm"}</button>
         </aside>
       </div>
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}

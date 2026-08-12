@@ -129,3 +129,17 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Không thể cập nhật nhóm" }, { status: 500 });
   }
 }
+
+export async function DELETE(_request: Request, { params }: Params) {
+  const { id } = await params;
+
+  try {
+    const result = getDb().prepare("DELETE FROM groups WHERE id = ?").run(id);
+    return result.changes
+      ? NextResponse.json({ ok: true })
+      : NextResponse.json({ error: "Không tìm thấy nhóm" }, { status: 404 });
+  } catch (error) {
+    console.error("Unable to delete group", error);
+    return NextResponse.json({ error: "Không thể xóa nhóm" }, { status: 500 });
+  }
+}
