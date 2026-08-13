@@ -1,6 +1,20 @@
 import { NextResponse } from "next/server";
 
-type Person = { id: number; name: string; expenses: { amount: number; splitWith?: number[]; splitWeights?: Record<string, number> }[] };
+type SplitMode = "equal" | "percent" | "amount";
+type Person = { id: number; name: string; expenses: { amount: number; splitWith?: number[]; splitMode?: SplitMode; splitValues?: Record<string, number> }[] };
+
+function sharesFor(amount: number, participantIds: number[], mode: SplitMode, values: Record<string, number> = {}) {
+  if (mode === "equal") {
+    const base = Math.floor(amount / participantIds.length);
+    let remainder = Math.round(amount - base * participantIds.length);
+    return participantIds.map(() => base + (remainder-- > 0 ? 1 : 0));
+  }
+  const requested = participantIds.map(id => Math.max(0, mode === "percent" ? amount * (Number(values[id]) || 0) / 100 : Number(values[id]) || 0));
+  const requestedTotal = requested.reduce((sum, value) => sum + value, 0);
+  return requestedTotal > 0
+    ? requested.map(value => value * amount / requestedTotal)
+    : participantIds.map(() => amount / participantIds.length);
+}
 
 export async function POST(request: Request) {
   const { people, collectorId } = await request.json() as { people: Person[]; collectorId: number };
@@ -15,11 +29,9 @@ export async function POST(request: Request) {
       const participantIds = expense.splitWith?.filter(id => balances.has(id)) ?? people.map(person => person.id);
       if (!participantIds.length) continue;
       balances.set(payer.id, (balances.get(payer.id) ?? 0) + amount);
-      const weights = participantIds.map(id => Math.max(0.01, Number(expense.splitWeights?.[id]) || 1));
-      const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+      const shares = sharesFor(amount, participantIds, expense.splitMode ?? "equal", expense.splitValues);
       participantIds.forEach((participantId, index) => {
-        const share = amount * weights[index] / totalWeight;
-        balances.set(participantId, (balances.get(participantId) ?? 0) - share);
+        balances.set(participantId, (balances.get(participantId) ?? 0) - shares[index]);
       });
     }
   }

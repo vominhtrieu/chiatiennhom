@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS expenses (
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
   label TEXT NOT NULL,
-  amount INTEGER NOT NULL
+  amount INTEGER NOT NULL,
+  split_mode TEXT NOT NULL DEFAULT 'equal'
 );
 
 CREATE TABLE IF NOT EXISTS expense_participants (
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS expense_participants (
   person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   weight REAL NOT NULL DEFAULT 1,
+  share_value REAL NOT NULL DEFAULT 1,
   PRIMARY KEY (expense_id, person_id)
 );
 
@@ -66,6 +68,41 @@ export function getDb() {
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
       }
+    }
+    const expenseColumns = databaseGlobal.chiaTienDb.prepare("PRAGMA table_info(expenses)").all() as { name: string }[];
+    let addedSplitMode = false;
+    if (!expenseColumns.some(column => column.name === "split_mode")) {
+      try {
+        databaseGlobal.chiaTienDb.exec("ALTER TABLE expenses ADD COLUMN split_mode TEXT NOT NULL DEFAULT 'equal'");
+        addedSplitMode = true;
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+    const updatedParticipantColumns = databaseGlobal.chiaTienDb.prepare("PRAGMA table_info(expense_participants)").all() as { name: string }[];
+    let addedShareValue = false;
+    if (!updatedParticipantColumns.some(column => column.name === "share_value")) {
+      try {
+        databaseGlobal.chiaTienDb.exec("ALTER TABLE expense_participants ADD COLUMN share_value REAL NOT NULL DEFAULT 1");
+        addedShareValue = true;
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+    if (addedSplitMode || addedShareValue) {
+      databaseGlobal.chiaTienDb.exec(`
+        UPDATE expenses SET split_mode = 'percent'
+        WHERE id IN (
+          SELECT expense_id FROM expense_participants
+          GROUP BY expense_id HAVING MAX(weight) != MIN(weight)
+        );
+        UPDATE expense_participants
+        SET share_value = 100.0 * weight / (
+          SELECT SUM(other.weight) FROM expense_participants other
+          WHERE other.expense_id = expense_participants.expense_id
+        )
+        WHERE expense_id IN (SELECT id FROM expenses WHERE split_mode = 'percent');
+      `);
     }
   }
 

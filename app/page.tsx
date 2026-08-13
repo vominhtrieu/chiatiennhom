@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Expense = { id: number; label: string; amount: number; splitWith: number[]; splitWeights: Record<string, number> };
+type SplitMode = "equal" | "percent" | "amount";
+type Expense = { id: number; label: string; amount: number; splitWith: number[]; splitMode: SplitMode; splitValues: Record<string, number> };
 type Person = { id: number; name: string; expenses: Expense[] };
 type Transfer = { from: string; to: string; amount: number };
 
@@ -13,6 +14,51 @@ const initialPeople: Person[] = [
 
 const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const newNumericId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
+
+function distribute(total: number, ids: number[], decimals = 0) {
+  if (!ids.length) return {};
+  const factor = 10 ** decimals;
+  const totalUnits = Math.max(0, Math.round(total * factor));
+  const base = Math.floor(totalUnits / ids.length);
+  let remainder = totalUnits - base * ids.length;
+  return Object.fromEntries(ids.map(id => [id, (base + (remainder-- > 0 ? 1 : 0)) / factor]));
+}
+
+function splitTarget(mode: SplitMode, amount: number) {
+  return mode === "percent" ? 100 : mode === "amount" ? amount : 0;
+}
+
+function defaultSplitValues(mode: SplitMode, amount: number, ids: number[]) {
+  if (mode === "equal") return Object.fromEntries(ids.map(id => [id, 1]));
+  return distribute(splitTarget(mode, amount), ids, mode === "percent" ? 2 : 0);
+}
+
+function scaleAmountValues(amount: number, ids: number[], current: Record<string, number>) {
+  const currentTotal = ids.reduce((sum, id) => sum + Math.max(0, Number(current[id]) || 0), 0);
+  if (currentTotal <= 0) return defaultSplitValues("amount", amount, ids);
+  const target = Math.max(0, Math.round(amount));
+  const raw = ids.map(id => Math.max(0, Number(current[id]) || 0) * target / currentTotal);
+  const units = raw.map(Math.floor);
+  let remainder = target - units.reduce((sum, value) => sum + value, 0);
+  raw.map((value, index) => ({ index, fraction: value - units[index] }))
+    .sort((a, b) => b.fraction - a.fraction)
+    .forEach(item => { if (remainder-- > 0) units[item.index] += 1; });
+  return Object.fromEntries(ids.map((id, index) => [id, units[index]]));
+}
+
+function sharesForExpense(expense: Expense, ids: number[]) {
+  if (expense.splitMode === "equal") {
+    const values = distribute(expense.amount, ids);
+    return ids.map(id => Number(values[id]) || 0);
+  }
+  const requested = ids.map(id => Math.max(0, expense.splitMode === "percent"
+    ? expense.amount * (Number(expense.splitValues?.[id]) || 0) / 100
+    : Number(expense.splitValues?.[id]) || 0));
+  const requestedTotal = requested.reduce((sum, value) => sum + value, 0);
+  return requestedTotal > 0
+    ? requested.map(value => value * expense.amount / requestedTotal)
+    : ids.map(() => expense.amount / ids.length);
+}
 
 export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   const [people, setPeople] = useState<Person[]>(initialPeople);
@@ -122,11 +168,9 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
         const participantIds = expense.splitWith?.filter(id => balances.has(id)) ?? people.map(person => person.id);
         if (!participantIds.length) continue;
         balances.set(payer.id, (balances.get(payer.id) ?? 0) + expense.amount);
-        const weights = participantIds.map(id => Math.max(0.01, Number(expense.splitWeights?.[id]) || 1));
-        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        const shares = sharesForExpense(expense, participantIds);
         participantIds.forEach((id, index) => {
-          const share = expense.amount * weights[index] / totalWeight;
-          balances.set(id, (balances.get(id) ?? 0) - share);
+          balances.set(id, (balances.get(id) ?? 0) - shares[index]);
         });
       }
     }
@@ -150,7 +194,13 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   }
 
   function updateExpense(personId: number, expenseId: number, patch: Partial<Expense>) {
-    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: p.expenses.map(e => e.id === expenseId ? { ...e, ...patch } : e) } : p));
+    const current = people.flatMap(person => person.expenses).find(expense => expense.id === expenseId);
+    let splitValues = current?.splitValues;
+    if (patch.amount !== undefined && current?.splitMode === "amount") {
+      splitValues = scaleAmountValues(patch.amount, current.splitWith, current.splitValues);
+      mutateDebounced(`expense:${expenseId}:participants`, { action: "updateExpenseParticipants", expenseId, participantIds: current.splitWith, mode: "amount", values: splitValues });
+    }
+    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: p.expenses.map(e => e.id === expenseId ? { ...e, ...patch, ...(splitValues ? { splitValues } : {}) } : e) } : p));
     setServerTransfers(null);
     if (patch.label !== undefined) mutateDebounced(`expense:${expenseId}:label`, { action: "updateExpense", expenseId, field: "label", value: patch.label });
     if (patch.amount !== undefined) mutateDebounced(`expense:${expenseId}:amount`, { action: "updateExpense", expenseId, field: "amount", value: patch.amount });
@@ -159,8 +209,8 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   function addExpense(personId: number) {
     const id = newNumericId();
     const participantIds = people.map(person => person.id);
-    const splitWeights = Object.fromEntries(participantIds.map(participantId => [participantId, 1]));
-    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0, splitWith: participantIds, splitWeights }] } : p));
+    const splitValues = defaultSplitValues("equal", 0, participantIds);
+    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0, splitWith: participantIds, splitMode: "equal", splitValues }] } : p));
     setServerTransfers(null);
     void mutate({ action: "addExpense", personId, expenseId: id, participantIds });
   }
@@ -183,11 +233,13 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
     if (people.length <= 2) return;
     cancelDebounced(`person:${id}:`);
     people.find(person => person.id === id)?.expenses.forEach(expense => cancelDebounced(`expense:${expense.id}:`));
+    people.flatMap(person => person.expenses).filter(expense => expense.splitWith.includes(id))
+      .forEach(expense => cancelDebounced(`expense:${expense.id}:participants`));
     const next = people.filter(p => p.id !== id).map(person => ({ ...person, expenses: person.expenses.map(expense => {
       const splitWith = expense.splitWith.filter(personId => personId !== id);
       const nextSplitWith = splitWith.length ? splitWith : [person.id];
-      const splitWeights = Object.fromEntries(nextSplitWith.map(personId => [personId, expense.splitWeights?.[personId] ?? 1]));
-      return { ...expense, splitWith: nextSplitWith, splitWeights };
+      const splitValues = defaultSplitValues(expense.splitMode, expense.amount, nextSplitWith);
+      return { ...expense, splitWith: nextSplitWith, splitValues };
     }) }));
     setPeople(next);
     if (collectorId === id) setCollectorId(next[0].id);
@@ -201,26 +253,35 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
     const selected = expense.splitWith.includes(personId);
     if (selected && expense.splitWith.length === 1) { setToast("Một khoản chi cần ít nhất một người"); window.setTimeout(() => setToast(""), 1600); return; }
     const updatedIds = selected ? expense.splitWith.filter(id => id !== personId) : [...expense.splitWith, personId];
-    const updatedWeights = Object.fromEntries(updatedIds.map(id => [id, expense.splitWeights?.[id] ?? 1]));
+    const updatedValues = defaultSplitValues(expense.splitMode, expense.amount, updatedIds);
     cancelDebounced(`expense:${expenseId}:participants`);
-    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWith: updatedIds, splitWeights: updatedWeights } : item) })));
+    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWith: updatedIds, splitValues: updatedValues } : item) })));
     setServerTransfers(null);
-    void mutate({ action: "updateExpenseParticipants", expenseId, participantIds: updatedIds, weights: updatedWeights });
+    void mutate({ action: "updateExpenseParticipants", expenseId, participantIds: updatedIds, mode: expense.splitMode, values: updatedValues });
   }
 
-  function updateParticipantWeight(expenseId: number, personId: number, value: string) {
+  function changeSplitMode(expenseId: number, mode: SplitMode) {
     const expense = people.flatMap(person => person.expenses).find(item => item.id === expenseId);
-    if (!expense || !expense.splitWith.includes(personId)) return;
-    const weight = Math.min(1000, Math.max(0.01, Number(value.replace(",", ".")) || 1));
-    const updatedWeights = { ...expense.splitWeights, [personId]: weight };
-    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWeights: updatedWeights } : item) })));
+    if (!expense) return;
+    const splitValues = defaultSplitValues(mode, expense.amount, expense.splitWith);
+    cancelDebounced(`expense:${expenseId}:participants`);
+    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitMode: mode, splitValues } : item) })));
     setServerTransfers(null);
-    mutateDebounced(`expense:${expenseId}:participants`, {
-      action: "updateExpenseParticipants",
-      expenseId,
-      participantIds: expense.splitWith,
-      weights: updatedWeights,
-    });
+    void mutate({ action: "updateExpenseParticipants", expenseId, participantIds: expense.splitWith, mode, values: splitValues });
+  }
+
+  function updateParticipantShare(expenseId: number, personId: number, value: string) {
+    const expense = people.flatMap(person => person.expenses).find(item => item.id === expenseId);
+    if (!expense || expense.splitMode === "equal" || !expense.splitWith.includes(personId)) return;
+    const target = splitTarget(expense.splitMode, expense.amount);
+    const parsed = expense.splitMode === "amount" ? Number(value.replace(/\D/g, "")) : Number(value.replace(",", "."));
+    const nextValue = Math.min(target, Math.max(0, Number.isFinite(parsed) ? parsed : 0));
+    const otherIds = expense.splitWith.filter(id => id !== personId);
+    const otherValues = distribute(target - nextValue, otherIds, expense.splitMode === "percent" ? 2 : 0);
+    const splitValues = { ...otherValues, [personId]: nextValue };
+    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitValues } : item) })));
+    setServerTransfers(null);
+    mutateDebounced(`expense:${expenseId}:participants`, { action: "updateExpenseParticipants", expenseId, participantIds: expense.splitWith, mode: expense.splitMode, values: splitValues });
   }
 
   function selectCollector(id: number) {
@@ -378,13 +439,34 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
                       </button>
                       <button className="remove" onClick={() => removeExpense(person.id, expense.id)} aria-label="Xóa khoản chi">×</button>
                     </div>
-                    {openSplitId === expense.id && <div className="split-panel"><div><span><b>Chia khoản này cho ai?</b><small>Nhập tỉ lệ, ví dụ 2 : 1 : 1</small></span><button onClick={() => setOpenSplitId(null)}>Xong</button></div><div className="split-options">{people.map(member => {
-                      const selected = expense.splitWith.includes(member.id);
-                      return <div className={`split-option ${selected ? "checked" : ""}`} key={member.id}>
-                        <label><input type="checkbox" checked={selected} onChange={() => toggleParticipant(expense.id, member.id)} /><span>✓</span><b>{member.name}</b></label>
-                        {selected && <div className="ratio-field"><span>×</span><input type="number" inputMode="decimal" min="0.01" max="1000" step="0.1" value={expense.splitWeights?.[member.id] ?? 1} onChange={event => updateParticipantWeight(expense.id, member.id, event.target.value)} aria-label={`Tỉ lệ của ${member.name}`} /></div>}
-                      </div>;
-                    })}</div></div>}
+                    {openSplitId === expense.id && <div className="split-panel">
+                      <div><span><b>Chia khoản này cho ai?</b><small>Chọn cách chia rồi nhập ngay cạnh từng người.</small></span><button onClick={() => setOpenSplitId(null)}>Xong</button></div>
+                      <div className="split-mode" role="group" aria-label="Cách chia khoản chi">
+                        <button className={expense.splitMode === "equal" ? "active" : ""} onClick={() => changeSplitMode(expense.id, "equal")}>Chia đều</button>
+                        <button className={expense.splitMode === "percent" ? "active" : ""} onClick={() => changeSplitMode(expense.id, "percent")}>Theo %</button>
+                        <button className={expense.splitMode === "amount" ? "active" : ""} onClick={() => changeSplitMode(expense.id, "amount")}>Số tiền</button>
+                      </div>
+                      <div className="split-options">{people.map(member => {
+                        const selected = expense.splitWith.includes(member.id);
+                        const participantIndex = expense.splitWith.indexOf(member.id);
+                        const calculatedShare = selected ? sharesForExpense(expense, expense.splitWith)[participantIndex] : 0;
+                        return <div className={`split-option ${selected ? "checked" : ""}`} key={member.id}>
+                          <label><input type="checkbox" checked={selected} onChange={() => toggleParticipant(expense.id, member.id)} /><span>✓</span><b>{member.name}</b></label>
+                          {selected && (expense.splitMode === "equal"
+                            ? <span className="equal-share">{money.format(Math.round(calculatedShare))}</span>
+                            : <div className={`share-field ${expense.splitMode}`}>
+                                <input
+                                  type="text"
+                                  inputMode={expense.splitMode === "percent" ? "decimal" : "numeric"}
+                                  value={expense.splitValues?.[member.id] ?? 0}
+                                  onChange={event => updateParticipantShare(expense.id, member.id, event.target.value)}
+                                  aria-label={`${expense.splitMode === "percent" ? "Phần trăm" : "Số tiền"} của ${member.name}`}
+                                />
+                                <span>{expense.splitMode === "percent" ? "%" : "₫"}</span>
+                              </div>)}
+                        </div>;
+                      })}</div>
+                    </div>}
                     </div>
                   ))}
                 </div>

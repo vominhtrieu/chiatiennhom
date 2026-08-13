@@ -3,7 +3,8 @@ import { getDb } from "@/db";
 
 export const runtime = "nodejs";
 
-type Expense = { id: number; label: string; amount: number; splitWith?: number[]; splitWeights?: Record<string, number> };
+type SplitMode = "equal" | "percent" | "amount";
+type Expense = { id: number; label: string; amount: number; splitWith?: number[]; splitMode?: SplitMode; splitValues?: Record<string, number>; splitWeights?: Record<string, number> };
 type Person = { id: number; name: string; expenses: Expense[] };
 
 function makeId() {
@@ -33,11 +34,17 @@ export async function POST(request: Request) {
       const splitWith = originalParticipantIds
         .map((personId) => personIdMap.get(personId))
         .filter((personId): personId is number => personId !== undefined);
-      const splitWeights = Object.fromEntries(originalParticipantIds.flatMap(originalId => {
+      const legacyWeights = originalParticipantIds.map(id => Math.max(0.01, Number(expense.splitWeights?.[id]) || 1));
+      const hasUnevenLegacyWeights = legacyWeights.some(weight => weight !== legacyWeights[0]);
+      const splitMode: SplitMode = expense.splitMode ?? (hasUnevenLegacyWeights ? "percent" : "equal");
+      const legacyWeightTotal = legacyWeights.reduce((sum, weight) => sum + weight, 0);
+      const splitValues = Object.fromEntries(originalParticipantIds.flatMap((originalId, index) => {
         const newId = personIdMap.get(originalId);
-        return newId === undefined ? [] : [[newId, Math.max(0.01, Number(expense.splitWeights?.[originalId]) || 1)]];
+        const fallback = splitMode === "percent" ? legacyWeights[index] * 100 / legacyWeightTotal : 1;
+        const suppliedValue = Number(expense.splitValues?.[originalId]);
+        return newId === undefined ? [] : [[newId, Math.max(0, Number.isFinite(suppliedValue) ? suppliedValue : fallback)]];
       }));
-      return { ...expense, id: expenseIdMap.get(expense.id)!, splitWith, splitWeights };
+      return { ...expense, id: expenseIdMap.get(expense.id)!, splitWith, splitMode, splitValues };
     }),
   }));
   const remappedCollectorId = personIdMap.get(collectorId) ?? remappedPeople[0].id;
@@ -53,13 +60,13 @@ export async function POST(request: Request) {
       insertPerson.run(person.id, id, person.name.slice(0, 80), index);
     }
 
-    const insertExpense = db.prepare("INSERT INTO expenses (id, group_id, person_id, label, amount) VALUES (?, ?, ?, ?, ?)");
-    const insertParticipant = db.prepare("INSERT INTO expense_participants (expense_id, person_id, group_id, weight) VALUES (?, ?, ?, ?)");
+    const insertExpense = db.prepare("INSERT INTO expenses (id, group_id, person_id, label, amount, split_mode) VALUES (?, ?, ?, ?, ?, ?)");
+    const insertParticipant = db.prepare("INSERT INTO expense_participants (expense_id, person_id, group_id, weight, share_value) VALUES (?, ?, ?, 1, ?)");
     for (const person of remappedPeople) {
       for (const expense of person.expenses) {
-        insertExpense.run(expense.id, id, person.id, expense.label.slice(0, 120), Math.max(0, Math.round(expense.amount)));
+        insertExpense.run(expense.id, id, person.id, expense.label.slice(0, 120), Math.max(0, Math.round(expense.amount)), expense.splitMode);
         for (const participantId of expense.splitWith) {
-          insertParticipant.run(expense.id, participantId, id, expense.splitWeights[participantId] ?? 1);
+          insertParticipant.run(expense.id, participantId, id, expense.splitValues[participantId] ?? 1);
         }
       }
     }
