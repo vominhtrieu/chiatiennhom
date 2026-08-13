@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-type Person = { id: number; name: string; expenses: { amount: number; splitWith?: number[] }[] };
+type Person = { id: number; name: string; expenses: { amount: number; splitWith?: number[]; splitWeights?: Record<string, number> }[] };
 
 export async function POST(request: Request) {
   const { people, collectorId } = await request.json() as { people: Person[]; collectorId: number };
@@ -15,8 +15,12 @@ export async function POST(request: Request) {
       const participantIds = expense.splitWith?.filter(id => balances.has(id)) ?? people.map(person => person.id);
       if (!participantIds.length) continue;
       balances.set(payer.id, (balances.get(payer.id) ?? 0) + amount);
-      const share = amount / participantIds.length;
-      for (const participantId of participantIds) balances.set(participantId, (balances.get(participantId) ?? 0) - share);
+      const weights = participantIds.map(id => Math.max(0.01, Number(expense.splitWeights?.[id]) || 1));
+      const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+      participantIds.forEach((participantId, index) => {
+        const share = amount * weights[index] / totalWeight;
+        balances.set(participantId, (balances.get(participantId) ?? 0) - share);
+      });
     }
   }
 

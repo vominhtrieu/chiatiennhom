@@ -3,7 +3,7 @@ import { getDb } from "@/db";
 
 export const runtime = "nodejs";
 
-type Expense = { id: number; label: string; amount: number; splitWith?: number[] };
+type Expense = { id: number; label: string; amount: number; splitWith?: number[]; splitWeights?: Record<string, number> };
 type Person = { id: number; name: string; expenses: Expense[] };
 
 function makeId() {
@@ -28,13 +28,17 @@ export async function POST(request: Request) {
   const remappedPeople = people.map((person) => ({
     ...person,
     id: personIdMap.get(person.id)!,
-    expenses: person.expenses.map((expense) => ({
-      ...expense,
-      id: expenseIdMap.get(expense.id)!,
-      splitWith: (expense.splitWith?.length ? expense.splitWith : people.map((member) => member.id))
+    expenses: person.expenses.map((expense) => {
+      const originalParticipantIds = expense.splitWith?.length ? expense.splitWith : people.map((member) => member.id);
+      const splitWith = originalParticipantIds
         .map((personId) => personIdMap.get(personId))
-        .filter((personId): personId is number => personId !== undefined),
-    })),
+        .filter((personId): personId is number => personId !== undefined);
+      const splitWeights = Object.fromEntries(originalParticipantIds.flatMap(originalId => {
+        const newId = personIdMap.get(originalId);
+        return newId === undefined ? [] : [[newId, Math.max(0.01, Number(expense.splitWeights?.[originalId]) || 1)]];
+      }));
+      return { ...expense, id: expenseIdMap.get(expense.id)!, splitWith, splitWeights };
+    }),
   }));
   const remappedCollectorId = personIdMap.get(collectorId) ?? remappedPeople[0].id;
 
@@ -50,12 +54,12 @@ export async function POST(request: Request) {
     }
 
     const insertExpense = db.prepare("INSERT INTO expenses (id, group_id, person_id, label, amount) VALUES (?, ?, ?, ?, ?)");
-    const insertParticipant = db.prepare("INSERT INTO expense_participants (expense_id, person_id, group_id) VALUES (?, ?, ?)");
+    const insertParticipant = db.prepare("INSERT INTO expense_participants (expense_id, person_id, group_id, weight) VALUES (?, ?, ?, ?)");
     for (const person of remappedPeople) {
       for (const expense of person.expenses) {
         insertExpense.run(expense.id, id, person.id, expense.label.slice(0, 120), Math.max(0, Math.round(expense.amount)));
         for (const participantId of expense.splitWith) {
-          insertParticipant.run(expense.id, participantId, id);
+          insertParticipant.run(expense.id, participantId, id, expense.splitWeights[participantId] ?? 1);
         }
       }
     }

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS expense_participants (
   expense_id INTEGER NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
   person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
   group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  weight REAL NOT NULL DEFAULT 1,
   PRIMARY KEY (expense_id, person_id)
 );
 
@@ -54,6 +55,14 @@ export function getDb() {
     if (!groupColumns.some(column => column.name === "last_viewed_at")) {
       try {
         databaseGlobal.chiaTienDb.exec("ALTER TABLE groups ADD COLUMN last_viewed_at INTEGER");
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
+      }
+    }
+    const participantColumns = databaseGlobal.chiaTienDb.prepare("PRAGMA table_info(expense_participants)").all() as { name: string }[];
+    if (!participantColumns.some(column => column.name === "weight")) {
+      try {
+        databaseGlobal.chiaTienDb.exec("ALTER TABLE expense_participants ADD COLUMN weight REAL NOT NULL DEFAULT 1");
       } catch (error) {
         if (!(error instanceof Error) || !error.message.includes("duplicate column name")) throw error;
       }

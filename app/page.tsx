@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Expense = { id: number; label: string; amount: number; splitWith: number[] };
+type Expense = { id: number; label: string; amount: number; splitWith: number[]; splitWeights: Record<string, number> };
 type Person = { id: number; name: string; expenses: Expense[] };
 type Transfer = { from: string; to: string; amount: number };
 
@@ -122,8 +122,12 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
         const participantIds = expense.splitWith?.filter(id => balances.has(id)) ?? people.map(person => person.id);
         if (!participantIds.length) continue;
         balances.set(payer.id, (balances.get(payer.id) ?? 0) + expense.amount);
-        const share = expense.amount / participantIds.length;
-        participantIds.forEach(id => balances.set(id, (balances.get(id) ?? 0) - share));
+        const weights = participantIds.map(id => Math.max(0.01, Number(expense.splitWeights?.[id]) || 1));
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        participantIds.forEach((id, index) => {
+          const share = expense.amount * weights[index] / totalWeight;
+          balances.set(id, (balances.get(id) ?? 0) - share);
+        });
       }
     }
     return people
@@ -155,7 +159,8 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
   function addExpense(personId: number) {
     const id = newNumericId();
     const participantIds = people.map(person => person.id);
-    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0, splitWith: participantIds }] } : p));
+    const splitWeights = Object.fromEntries(participantIds.map(participantId => [participantId, 1]));
+    setPeople(list => list.map(p => p.id === personId ? { ...p, expenses: [...p.expenses, { id, label: "", amount: 0, splitWith: participantIds, splitWeights }] } : p));
     setServerTransfers(null);
     void mutate({ action: "addExpense", personId, expenseId: id, participantIds });
   }
@@ -180,7 +185,9 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
     people.find(person => person.id === id)?.expenses.forEach(expense => cancelDebounced(`expense:${expense.id}:`));
     const next = people.filter(p => p.id !== id).map(person => ({ ...person, expenses: person.expenses.map(expense => {
       const splitWith = expense.splitWith.filter(personId => personId !== id);
-      return { ...expense, splitWith: splitWith.length ? splitWith : [person.id] };
+      const nextSplitWith = splitWith.length ? splitWith : [person.id];
+      const splitWeights = Object.fromEntries(nextSplitWith.map(personId => [personId, expense.splitWeights?.[personId] ?? 1]));
+      return { ...expense, splitWith: nextSplitWith, splitWeights };
     }) }));
     setPeople(next);
     if (collectorId === id) setCollectorId(next[0].id);
@@ -194,9 +201,26 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
     const selected = expense.splitWith.includes(personId);
     if (selected && expense.splitWith.length === 1) { setToast("Một khoản chi cần ít nhất một người"); window.setTimeout(() => setToast(""), 1600); return; }
     const updatedIds = selected ? expense.splitWith.filter(id => id !== personId) : [...expense.splitWith, personId];
-    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWith: updatedIds } : item) })));
+    const updatedWeights = Object.fromEntries(updatedIds.map(id => [id, expense.splitWeights?.[id] ?? 1]));
+    cancelDebounced(`expense:${expenseId}:participants`);
+    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWith: updatedIds, splitWeights: updatedWeights } : item) })));
     setServerTransfers(null);
-    void mutate({ action: "updateExpenseParticipants", expenseId, participantIds: updatedIds });
+    void mutate({ action: "updateExpenseParticipants", expenseId, participantIds: updatedIds, weights: updatedWeights });
+  }
+
+  function updateParticipantWeight(expenseId: number, personId: number, value: string) {
+    const expense = people.flatMap(person => person.expenses).find(item => item.id === expenseId);
+    if (!expense || !expense.splitWith.includes(personId)) return;
+    const weight = Math.min(1000, Math.max(0.01, Number(value.replace(",", ".")) || 1));
+    const updatedWeights = { ...expense.splitWeights, [personId]: weight };
+    setPeople(list => list.map(person => ({ ...person, expenses: person.expenses.map(item => item.id === expenseId ? { ...item, splitWeights: updatedWeights } : item) })));
+    setServerTransfers(null);
+    mutateDebounced(`expense:${expenseId}:participants`, {
+      action: "updateExpenseParticipants",
+      expenseId,
+      participantIds: expense.splitWith,
+      weights: updatedWeights,
+    });
   }
 
   function selectCollector(id: number) {
@@ -354,7 +378,13 @@ export default function Home({ groupRoute = false }: { groupRoute?: boolean }) {
                       </button>
                       <button className="remove" onClick={() => removeExpense(person.id, expense.id)} aria-label="Xóa khoản chi">×</button>
                     </div>
-                    {openSplitId === expense.id && <div className="split-panel"><div><b>Chia khoản này cho ai?</b><button onClick={() => setOpenSplitId(null)}>Xong</button></div><div className="split-options">{people.map(member => <label className={expense.splitWith.includes(member.id) ? "checked" : ""} key={member.id}><input type="checkbox" checked={expense.splitWith.includes(member.id)} onChange={() => toggleParticipant(expense.id, member.id)} /><span>✓</span>{member.name}</label>)}</div></div>}
+                    {openSplitId === expense.id && <div className="split-panel"><div><span><b>Chia khoản này cho ai?</b><small>Nhập tỉ lệ, ví dụ 2 : 1 : 1</small></span><button onClick={() => setOpenSplitId(null)}>Xong</button></div><div className="split-options">{people.map(member => {
+                      const selected = expense.splitWith.includes(member.id);
+                      return <div className={`split-option ${selected ? "checked" : ""}`} key={member.id}>
+                        <label><input type="checkbox" checked={selected} onChange={() => toggleParticipant(expense.id, member.id)} /><span>✓</span><b>{member.name}</b></label>
+                        {selected && <div className="ratio-field"><span>×</span><input type="number" inputMode="decimal" min="0.01" max="1000" step="0.1" value={expense.splitWeights?.[member.id] ?? 1} onChange={event => updateParticipantWeight(expense.id, member.id, event.target.value)} aria-label={`Tỉ lệ của ${member.name}`} /></div>}
+                      </div>;
+                    })}</div></div>}
                     </div>
                   ))}
                 </div>
